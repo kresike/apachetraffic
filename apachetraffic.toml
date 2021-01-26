@@ -1,0 +1,6 @@
+# apachetraffic configuration file
+
+GraphiteAddress = "127.0.0.1"
+GraphitePort = "2003"
+
+GraphitePrefix = "unconf_apachetraffic"
