@@ -4,7 +4,7 @@ Place the following three lines of configuration in your apache config:
 
 LogFormat "%h %v %I %O %^FB %t \"%r\" %>s" traffic
 LogIOTrackTTFB ON
-CustomLog "|/usr/local/sbin/apachetraffic" traffic
+CustomLog "|/usr/sbin/apachetraffic" traffic
 
 Compile and put the application in /usr/sbin/apachetraffic, and copy
 the apachetraffic.toml to /etc/apachetraffic/. Adjust graphite address and
