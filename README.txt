@@ -6,7 +6,7 @@ LogFormat "%h %v %I %O %^FB %t \"%r\" %>s" traffic
 LogIOTrackTTFB ON
 CustomLog "|/usr/local/sbin/apachetraffic" traffic
 
-Compile and put the application in /usr/local/sbin/apachetraffic, and copy
+Compile and put the application in /usr/sbin/apachetraffic, and copy
 the apachetraffic.toml to /etc/apachetraffic/. Adjust graphite address and
 prefix to fit your needs, restart apache and you're all set.
 
