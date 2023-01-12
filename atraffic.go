@@ -3,27 +3,28 @@ package main
 import (
 	"fmt"
 	"net"
-	"strings"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
-type TrafficEntry struct {
-	mu       sync.Mutex
+type TrafficData struct {
 	count    int
 	inbytes  int
 	outbytes int
 	ttfbsum  int
 }
 
-type TrafficList struct {
+type TrafficEntry struct {
 	mu       sync.Mutex
-	vhlist   map[string]*TrafficEntry
-	count    int
-	inbytes  int
-	outbytes int
-	ttfbsum  int
+	handlers map[string]*TrafficData
+}
+
+type TrafficList struct {
+	mu     sync.Mutex
+	vhlist map[string]*TrafficEntry
+	data   TrafficData
 }
 
 type TrafficMap struct {
@@ -35,10 +36,10 @@ func NewTrafficList() *TrafficList {
 	tl := TrafficList{}
 	tl.mu = sync.Mutex{}
 	tl.vhlist = make(map[string]*TrafficEntry)
-	tl.count = 0
-	tl.inbytes = 0
-	tl.outbytes = 0
-	tl.ttfbsum = 0
+	tl.data.count = 0
+	tl.data.inbytes = 0
+	tl.data.outbytes = 0
+	tl.data.ttfbsum = 0
 	return &tl
 }
 
@@ -49,7 +50,8 @@ func (tm *TrafficMap) SendTraffic(c net.Conn, prefix, hostname string) {
 	hn := strings.ReplaceAll(hostname, ".", "_")
 	now := time.Now().Truncate(time.Minute)
 
-	var tsc, vhc, rc, rxc, txc int
+	var tsc, vhc, hdlc, rc, rxc, txc int
+	var vhcnt, vhib, vhob, vhttfb int
 
 	for ts := range tm.timeslots {
 		if ts.Before(now) {
@@ -58,19 +60,39 @@ func (tm *TrafficMap) SendTraffic(c net.Conn, prefix, hostname string) {
 			for vh := range tl.vhlist {
 				vhc++
 				te := tl.vhlist[vh]
+				vhcnt = 0
+				vhib = 0
+				vhob = 0
+				vhttfb = 0
 				vhost := strings.ReplaceAll(vh, ".", "_")
-				rc += te.count
-				rxc += te.inbytes
-				txc += te.outbytes
-				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".requestcount "+strconv.Itoa(te.count)+" "+strconv.FormatInt(ts.Unix(),10)+"\n")
-				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".rxbytes "+strconv.Itoa(te.inbytes)+" "+strconv.FormatInt(ts.Unix(),10)+"\n")
-				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".txbytes "+strconv.Itoa(te.outbytes)+" "+strconv.FormatInt(ts.Unix(),10)+"\n")
-				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".avgttfb "+strconv.Itoa(te.ttfbsum/te.count)+" "+strconv.FormatInt(ts.Unix(),10)+"\n")
+				for hdl := range te.handlers {
+					hdlc++
+					td := te.handlers[hdl]
+					handler := strings.ReplaceAll(hdl, ".", "_")
+					if handler == "" {
+						handler = "static_content"
+					}
+					rc += td.count
+					rxc += td.inbytes
+					txc += td.outbytes
+					vhcnt += td.count
+					vhib += td.inbytes
+					vhob += td.outbytes
+					vhttfb += td.ttfbsum
+					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".requestcount "+strconv.Itoa(td.count)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".rxbytes "+strconv.Itoa(td.inbytes)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".txbytes "+strconv.Itoa(td.outbytes)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".avgttfb "+strconv.Itoa(td.ttfbsum/td.count)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+				}
+				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".requestcount "+strconv.Itoa(vhcnt)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".rxbytes "+strconv.Itoa(vhib)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".txbytes "+strconv.Itoa(vhob)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".avgttfb "+strconv.Itoa(vhttfb/vhcnt)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
 			}
-			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.requestcount "+strconv.Itoa(tl.count)+" "+strconv.FormatInt(ts.Unix(),10)+"\n")
-			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.rxbytes "+strconv.Itoa(tl.inbytes)+" "+strconv.FormatInt(ts.Unix(),10)+"\n")
-			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.txbytes "+strconv.Itoa(tl.outbytes)+" "+strconv.FormatInt(ts.Unix(),10)+"\n")
-			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.avgttfb "+strconv.Itoa(tl.ttfbsum/tl.count)+" "+strconv.FormatInt(ts.Unix(),10)+"\n")
+			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.requestcount "+strconv.Itoa(tl.data.count)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.rxbytes "+strconv.Itoa(tl.data.inbytes)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.txbytes "+strconv.Itoa(tl.data.outbytes)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.avgttfb "+strconv.Itoa(tl.data.ttfbsum/tl.data.count)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
 			delete(tm.timeslots, ts)
 		}
 	}
@@ -82,8 +104,8 @@ func (tm *TrafficMap) Get(ts time.Time) (*TrafficList, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 	tl, ok := tm.timeslots[ts]
-	if ok != true {
-		return nil, fmt.Errorf("Key not found")
+	if !ok {
+		return nil, fmt.Errorf("key not found")
 	}
 
 	return tl, nil
@@ -98,41 +120,59 @@ func (tm *TrafficMap) Add(ts time.Time, tl *TrafficList) {
 	tm.timeslots[ts] = tl
 }
 
-func (te *TrafficEntry) Add(ib, ob, ttfb int) {
+func (te *TrafficEntry) Add(ib, ob, ttfb int, handler string) {
 	te.mu.Lock()
 	defer te.mu.Unlock()
-	te.count++
-	te.inbytes += ib
-	te.outbytes += ob
-	te.ttfbsum += ttfb
-}
-
-func (tl *TrafficList) get(vh string) (*TrafficEntry, error) {
-	te, ok := tl.vhlist[vh]
-	if ok != true {
-		return nil, fmt.Errorf("Cannot find vh entry")
+	if te.handlers == nil {
+		te.handlers = make(map[string]*TrafficData)
 	}
-	return te, nil
-}
-
-func (tl *TrafficList) AddEntry(vh string, ib, ob, ttfb int) {
-	tl.mu.Lock()
-	defer tl.mu.Unlock()
-	tl.count++
-	tl.inbytes += ib
-	tl.outbytes += ob
-	tl.ttfbsum += ttfb
-	te, err := tl.get(vh)
-	if err != nil {
-		tex := TrafficEntry{
-			mu:       sync.Mutex{},
+	td, ok := te.handlers[handler]
+	if !ok {
+		td = &TrafficData{
 			count:    1,
 			inbytes:  ib,
 			outbytes: ob,
 			ttfbsum:  ttfb,
 		}
+		te.handlers[handler] = td
+		return
+	}
+	td.count++
+	td.inbytes += ib
+	td.outbytes += ob
+	td.ttfbsum += ttfb
+}
+
+func (tl *TrafficList) get(vh string) (*TrafficEntry, error) {
+	te, ok := tl.vhlist[vh]
+	if !ok {
+		return nil, fmt.Errorf("cannot find vh entry")
+	}
+	return te, nil
+}
+
+func (tl *TrafficList) AddEntry(vh string, ib, ob, ttfb int, handler string) {
+	tl.mu.Lock()
+	defer tl.mu.Unlock()
+	tl.data.count++
+	tl.data.inbytes += ib
+	tl.data.outbytes += ob
+	tl.data.ttfbsum += ttfb
+	te, err := tl.get(vh)
+	if err != nil {
+		td := TrafficData{
+			count:    1,
+			inbytes:  ib,
+			outbytes: ob,
+			ttfbsum:  ttfb,
+		}
+		tex := TrafficEntry{
+			mu:       sync.Mutex{},
+			handlers: map[string]*TrafficData{},
+		}
+		tex.handlers[handler] = &td
 		tl.vhlist[vh] = &tex
 		return
 	}
-	te.Add(ib, ob, ttfb)
+	te.Add(ib, ob, ttfb, handler)
 }
