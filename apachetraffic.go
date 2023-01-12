@@ -49,7 +49,7 @@ func main() {
 	logger.Println("Configured graphite address: ", ghost, ":", gport, " prefix ", gpref)
 
 	if hostname, err = get_fqdn(); err != nil {
-		logger.Println(fmt.Errorf("Cannot get system's FQDN hostname: %s", err))
+		logger.Println(fmt.Errorf("cannot get system's FQDN hostname: %s", err))
 		hostname, _ = os.Hostname()
 	}
 
@@ -66,17 +66,25 @@ func main() {
 		rbytes, _ := strconv.Atoi(elems[2])
 		sbytes, _ := strconv.Atoi(elems[3])
 		ttfb, _ := strconv.Atoi(elems[4])
+		handler := ""
+		if len(elems) > 4 {
+			handler = elems[5]
+			// if the handler was unknown or not configured properly, it's better to leave it empty
+			if handler[0:1] == "-" || handler[0:1] == "[" {
+				handler = ""
+			}
+		}
 		now := time.Now().Truncate(time.Minute)
 		tl, err := tm.Get(now)
 		if err != nil {
 			tl = NewTrafficList()
 			tm.Add(now, tl)
 		}
-		tl.AddEntry(vhost, rbytes, sbytes, ttfb)
+		tl.AddEntry(vhost, rbytes, sbytes, ttfb, handler)
 	}
 	if err := scanner.Err(); err != nil {
-		logger.Println(fmt.Errorf("Error reading from stdin: %s", err))
-		panic(fmt.Errorf("Error reading from stdin: %s", err))
+		logger.Println(fmt.Errorf("error reading from stdin: %s", err))
+		panic(fmt.Errorf("error reading from stdin: %s", err))
 	}
 
 }
@@ -89,7 +97,7 @@ func sendStats() {
 		if err != nil {
 			logger.Println("Failed to connect to Graphite:", err)
 		} else {
-			logger.Println("Connected to:", ghost, ":", gport,"Sending traffic information...")
+			logger.Println("Connected to:", ghost, ":", gport, "Sending traffic information...")
 
 			tm.SendTraffic(conn, gpref, hostname)
 
@@ -104,7 +112,7 @@ func get_fqdn() (string, error) {
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		return "", fmt.Errorf("Error getting FQDN: %v", err)
+		return "", fmt.Errorf("error getting FQDN: %v", err)
 	}
 	fqdn := out.String()
 	fqdn = fqdn[:len(fqdn)-1]
