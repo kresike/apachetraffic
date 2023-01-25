@@ -10,10 +10,16 @@ import (
 )
 
 type TrafficData struct {
-	count    int
-	inbytes  int
-	outbytes int
-	ttfbsum  int
+	count       int
+	inbytes     int
+	inbytesmin  int
+	inbytesmax  int
+	outbytes    int
+	outbytesmin int
+	outbytesmax int
+	ttfbsum     int
+	ttfbmin     int
+	ttfbmax     int
 }
 
 type TrafficEntry struct {
@@ -43,7 +49,7 @@ func NewTrafficList() *TrafficList {
 	return &tl
 }
 
-func (tm *TrafficMap) SendTraffic(c net.Conn, prefix, hostname string) {
+func (tm *TrafficMap) SendTraffic(c net.Conn, prefix, serverprefix, hostname string) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
@@ -52,8 +58,10 @@ func (tm *TrafficMap) SendTraffic(c net.Conn, prefix, hostname string) {
 
 	var tsc, vhc, hdlc, rc, rxc, txc int
 	var vhcnt, vhib, vhob, vhttfb int
+	var sTraffic TrafficEntry
 
 	for ts := range tm.timeslots {
+		tstamp := strconv.FormatInt(ts.Unix(), 10)
 		if ts.Before(now) {
 			tsc++
 			tl := tm.timeslots[ts]
@@ -79,20 +87,38 @@ func (tm *TrafficMap) SendTraffic(c net.Conn, prefix, hostname string) {
 					vhib += td.inbytes
 					vhob += td.outbytes
 					vhttfb += td.ttfbsum
-					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".requestcount "+strconv.Itoa(td.count)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
-					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".rxbytes "+strconv.Itoa(td.inbytes)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
-					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".txbytes "+strconv.Itoa(td.outbytes)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
-					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".avgttfb "+strconv.Itoa(td.ttfbsum/td.count)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".requestcount "+strconv.Itoa(td.count)+" "+tstamp+"\n")
+					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".rxbytes "+strconv.Itoa(td.inbytes)+" "+tstamp+"\n")
+					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".txbytes "+strconv.Itoa(td.outbytes)+" "+tstamp+"\n")
+					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".avgttfb "+strconv.Itoa(td.ttfbsum/td.count)+" "+tstamp+"\n")
+					sTraffic.Add(rc, rxc, txc, td.ttfbsum, handler)
 				}
-				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".requestcount "+strconv.Itoa(vhcnt)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
-				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".rxbytes "+strconv.Itoa(vhib)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
-				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".txbytes "+strconv.Itoa(vhob)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
-				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".avgttfb "+strconv.Itoa(vhttfb/vhcnt)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".requestcount "+strconv.Itoa(vhcnt)+" "+tstamp+"\n")
+				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".rxbytes "+strconv.Itoa(vhib)+" "+tstamp+"\n")
+				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".txbytes "+strconv.Itoa(vhob)+" "+tstamp+"\n")
+				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".avgttfb "+strconv.Itoa(vhttfb/vhcnt)+" "+tstamp+"\n")
 			}
-			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.requestcount "+strconv.Itoa(tl.data.count)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
-			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.rxbytes "+strconv.Itoa(tl.data.inbytes)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
-			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.txbytes "+strconv.Itoa(tl.data.outbytes)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
-			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.avgttfb "+strconv.Itoa(tl.data.ttfbsum/tl.data.count)+" "+strconv.FormatInt(ts.Unix(), 10)+"\n")
+			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.requestcount "+strconv.Itoa(tl.data.count)+" "+tstamp+"\n")
+			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.rxbytes "+strconv.Itoa(tl.data.inbytes)+" "+tstamp+"\n")
+			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.txbytes "+strconv.Itoa(tl.data.outbytes)+" "+tstamp+"\n")
+			fmt.Fprintf(c, prefix+"."+hn+".servertraffic.avgttfb "+strconv.Itoa(tl.data.ttfbsum/tl.data.count)+" "+tstamp+"\n")
+			for hdl := range sTraffic.handlers {
+				td := sTraffic.handlers[hdl]
+				handler := strings.ReplaceAll(hdl, ".", "_")
+				if handler == "" {
+					handler = "static_content"
+				}
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".requestcount "+strconv.Itoa(td.count)+" "+tstamp+"\n")
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".ttfbsum "+strconv.Itoa(td.ttfbsum)+" "+tstamp+"\n")
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".ttfbmin "+strconv.Itoa(td.ttfbmin)+" "+tstamp+"\n")
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".ttfbmax "+strconv.Itoa(td.ttfbmax)+" "+tstamp+"\n")
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".rxbytes "+strconv.Itoa(td.inbytes)+" "+tstamp+"\n")
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".rxbytesmin "+strconv.Itoa(td.inbytesmin)+" "+tstamp+"\n")
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".rxbytesmax "+strconv.Itoa(td.inbytesmax)+" "+tstamp+"\n")
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".txbytes "+strconv.Itoa(td.outbytes)+" "+tstamp+"\n")
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".txbytesmin "+strconv.Itoa(td.outbytesmin)+" "+tstamp+"\n")
+				fmt.Fprintf(c, serverprefix+"."+hn+"."+handler+".txbytesmax "+strconv.Itoa(td.outbytesmax)+" "+tstamp+"\n")
+			}
 			delete(tm.timeslots, ts)
 		}
 	}
@@ -120,7 +146,7 @@ func (tm *TrafficMap) Add(ts time.Time, tl *TrafficList) {
 	tm.timeslots[ts] = tl
 }
 
-func (te *TrafficEntry) Add(ib, ob, ttfb int, handler string) {
+func (te *TrafficEntry) Add(cnt, ib, ob, ttfb int, handler string) {
 	te.mu.Lock()
 	defer te.mu.Unlock()
 	if te.handlers == nil {
@@ -129,18 +155,42 @@ func (te *TrafficEntry) Add(ib, ob, ttfb int, handler string) {
 	td, ok := te.handlers[handler]
 	if !ok {
 		td = &TrafficData{
-			count:    1,
-			inbytes:  ib,
-			outbytes: ob,
-			ttfbsum:  ttfb,
+			count:       cnt,
+			inbytes:     ib,
+			inbytesmin:  ib,
+			inbytesmax:  ib,
+			outbytes:    ob,
+			outbytesmin: ob,
+			outbytesmax: ob,
+			ttfbsum:     ttfb,
+			ttfbmin:     ttfb,
+			ttfbmax:     ttfb,
 		}
 		te.handlers[handler] = td
 		return
 	}
-	td.count++
+	td.count += cnt
 	td.inbytes += ib
+	if ib < td.inbytesmin {
+		td.inbytesmin = ib
+	}
+	if ib > td.inbytesmax {
+		td.inbytesmax = ib
+	}
 	td.outbytes += ob
+	if ob < td.outbytesmin {
+		td.outbytesmin = ob
+	}
+	if ob > td.outbytesmax {
+		td.outbytesmax = ob
+	}
 	td.ttfbsum += ttfb
+	if ttfb < td.ttfbmin {
+		td.ttfbmin = ttfb
+	}
+	if ttfb > td.ttfbmax {
+		td.ttfbmax = ttfb
+	}
 }
 
 func (tl *TrafficList) get(vh string) (*TrafficEntry, error) {
@@ -161,10 +211,16 @@ func (tl *TrafficList) AddEntry(vh string, ib, ob, ttfb int, handler string) {
 	te, err := tl.get(vh)
 	if err != nil {
 		td := TrafficData{
-			count:    1,
-			inbytes:  ib,
-			outbytes: ob,
-			ttfbsum:  ttfb,
+			count:       1,
+			inbytes:     ib,
+			inbytesmin:  ib,
+			inbytesmax:  ib,
+			outbytes:    ob,
+			outbytesmin: ob,
+			outbytesmax: ob,
+			ttfbsum:     ttfb,
+			ttfbmin:     ttfb,
+			ttfbmax:     ttfb,
 		}
 		tex := TrafficEntry{
 			mu:       sync.Mutex{},
@@ -174,5 +230,5 @@ func (tl *TrafficList) AddEntry(vh string, ib, ob, ttfb int, handler string) {
 		tl.vhlist[vh] = &tex
 		return
 	}
-	te.Add(ib, ob, ttfb, handler)
+	te.Add(1, ib, ob, ttfb, handler)
 }

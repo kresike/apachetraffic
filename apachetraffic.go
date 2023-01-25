@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-var ghost, gport, gpref string
+var ghost, gport, gpref, spref string
 var logger *(log.Logger)
 var tm TrafficMap
 var hostname string
@@ -32,6 +32,7 @@ func main() {
 	viper.SetDefault("GraphiteAddress", "xgraphite")
 	viper.SetDefault("GraphitePort", "2003")
 	viper.SetDefault("GraphitePrefix", "apachetraffic")
+	viper.SetDefault("GraphiteServerPrefix", "apacheservertraffic")
 
 	viper.SetConfigName("apachetraffic")
 	viper.SetConfigType("toml")
@@ -45,6 +46,7 @@ func main() {
 	ghost = viper.GetString("GraphiteAddress")
 	gport = viper.GetString("GraphitePort")
 	gpref = viper.GetString("GraphitePrefix")
+	spref = viper.GetString("GraphiteServerPrefix")
 
 	logger.Println("Configured graphite address: ", ghost, ":", gport, " prefix ", gpref)
 
@@ -99,7 +101,7 @@ func sendStats() {
 		} else {
 			logger.Println("Connected to:", ghost, ":", gport, "Sending traffic information...")
 
-			tm.SendTraffic(conn, gpref, hostname)
+			tm.SendTraffic(conn, gpref, spref, hostname)
 
 			conn.Close()
 		}
