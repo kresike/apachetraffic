@@ -65,6 +65,10 @@ func (tm *TrafficMap) SendTraffic(c net.Conn, prefix, serverprefix, hostname str
 		if ts.Before(now) {
 			tsc++
 			tl := tm.timeslots[ts]
+			sTraffic = TrafficEntry{
+				mu:       sync.Mutex{},
+				handlers: map[string]*TrafficData{},
+			}
 			for vh := range tl.vhlist {
 				vhc++
 				te := tl.vhlist[vh]
@@ -91,7 +95,7 @@ func (tm *TrafficMap) SendTraffic(c net.Conn, prefix, serverprefix, hostname str
 					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".rxbytes "+strconv.Itoa(td.inbytes)+" "+tstamp+"\n")
 					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".txbytes "+strconv.Itoa(td.outbytes)+" "+tstamp+"\n")
 					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".avgttfb "+strconv.Itoa(td.ttfbsum/td.count)+" "+tstamp+"\n")
-					sTraffic.Add(rc, rxc, txc, td.ttfbsum, handler)
+					sTraffic.Add(td.count, td.inbytes, td.outbytes, td.ttfbsum, handler)
 				}
 				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".requestcount "+strconv.Itoa(vhcnt)+" "+tstamp+"\n")
 				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".rxbytes "+strconv.Itoa(vhib)+" "+tstamp+"\n")
