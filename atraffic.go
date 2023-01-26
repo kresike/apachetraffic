@@ -95,7 +95,7 @@ func (tm *TrafficMap) SendTraffic(c net.Conn, prefix, serverprefix, hostname str
 					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".rxbytes "+strconv.Itoa(td.inbytes)+" "+tstamp+"\n")
 					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".txbytes "+strconv.Itoa(td.outbytes)+" "+tstamp+"\n")
 					fmt.Fprintf(c, prefix+"."+hn+".virtualhosts_byhandler."+vhost+"."+handler+".avgttfb "+strconv.Itoa(td.ttfbsum/td.count)+" "+tstamp+"\n")
-					sTraffic.Add(td.count, td.inbytes, td.outbytes, td.ttfbsum, handler)
+					sTraffic.Aggregate(td.count, td.inbytes, td.inbytesmin, td.inbytesmax, td.outbytes, td.outbytesmin, td.outbytesmax, td.ttfbsum, td.ttfbmin, td.ttfbmax, handler)
 				}
 				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".requestcount "+strconv.Itoa(vhcnt)+" "+tstamp+"\n")
 				fmt.Fprintf(c, prefix+"."+hn+".virtualhosts."+vhost+".rxbytes "+strconv.Itoa(vhib)+" "+tstamp+"\n")
@@ -148,6 +148,53 @@ func (tm *TrafficMap) Add(ts time.Time, tl *TrafficList) {
 		tm.timeslots = make(map[time.Time]*TrafficList)
 	}
 	tm.timeslots[ts] = tl
+}
+
+func (te *TrafficEntry) Aggregate(cnt, ib, imin, imax, ob, omin, omax, ttfb, ttfbmin, ttfbmax int, handler string) {
+	te.mu.Lock()
+	defer te.mu.Unlock()
+	if te.handlers == nil {
+		te.handlers = make(map[string]*TrafficData)
+	}
+	td, ok := te.handlers[handler]
+	if !ok {
+		td = &TrafficData{
+			count:       cnt,
+			inbytes:     ib,
+			inbytesmin:  imin,
+			inbytesmax:  imax,
+			outbytes:    ob,
+			outbytesmin: omin,
+			outbytesmax: omax,
+			ttfbsum:     ttfb,
+			ttfbmin:     ttfbmin,
+			ttfbmax:     ttfbmax,
+		}
+		te.handlers[handler] = td
+		return
+	}
+	td.count += cnt
+	td.inbytes += ib
+	if imin < td.inbytesmin {
+		td.inbytesmin = imin
+	}
+	if imax > td.inbytesmax {
+		td.inbytesmax = imax
+	}
+	td.outbytes += omin
+	if omin < td.outbytesmin {
+		td.outbytesmin = omin
+	}
+	if omax > td.outbytesmax {
+		td.outbytesmax = omax
+	}
+	td.ttfbsum += ttfb
+	if ttfbmin < td.ttfbmin {
+		td.ttfbmin = ttfbmin
+	}
+	if ttfbmax > td.ttfbmax {
+		td.ttfbmax = ttfbmax
+	}
 }
 
 func (te *TrafficEntry) Add(cnt, ib, ob, ttfb int, handler string) {
